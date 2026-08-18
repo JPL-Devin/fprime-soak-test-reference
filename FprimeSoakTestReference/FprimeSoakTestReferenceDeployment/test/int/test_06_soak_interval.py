@@ -7,9 +7,7 @@ STOP so FSW returns to idle.
 
 from soak_helpers import (
     CMD_TIMEOUT_S,
-    await_event_or_fsw,
     dp_serialize_state_path,
-    fsw_mark,
     latest_channel_value,
     send_cmd,
     wait_rf_quiet,
@@ -28,42 +26,29 @@ def test_soak_interval_dp_serialize_duty(fprime_test_api):
     wait_rf_quiet(1.0)
 
     start = fprime_test_api.get_event_test_history().size()
-    mark_started = fsw_mark("DpProductionStarted")
     send_cmd(fprime_test_api, f"{producer}.START_SERIALIZING")
     try:
-        started = await_event_or_fsw(
-            fprime_test_api,
-            f"{producer}.DpProductionStarted",
-            "DpProductionStarted",
-            start=start,
-            timeout_s=CMD_TIMEOUT_S,
-            fsw_before=mark_started,
+        started = fprime_test_api.await_event(
+            f"{producer}.DpProductionStarted", start=start, timeout=CMD_TIMEOUT_S
         )
         assert started is not None, "DpProductionStarted not observed"
 
         val = latest_channel_value(
-            fprime_test_api, f"{producer}.DpActive", timeout_s=max(CMD_TIMEOUT_S, 15)
+            fprime_test_api, f"{producer}.DpActive", timeout_s=CMD_TIMEOUT_S
         )
         if bool(val) is not True:
             # None: sample never arrived. False: often a stale pre-START
-            # sample that await_telemetry matches when the True update is
-            # dropped on RF. DpProductionStarted already confirmed onboard.
+            # sample. DpProductionStarted already confirmed the start.
             fprime_test_api.log(
                 f"DpActive={val!r} after START; "
-                "accepting FSW-confirmed DpProductionStarted"
+                "accepting DpProductionStarted confirmation"
             )
     finally:
         # Always stop — never leave the producer serializing after the suite.
         stop_start = fprime_test_api.get_event_test_history().size()
-        mark_stopped = fsw_mark("DpProductionStopped")
         send_cmd(fprime_test_api, f"{producer}.STOP_SERIALIZING")
-        stopped = await_event_or_fsw(
-            fprime_test_api,
-            f"{producer}.DpProductionStopped",
-            "DpProductionStopped",
-            start=stop_start,
-            timeout_s=CMD_TIMEOUT_S,
-            fsw_before=mark_stopped,
+        stopped = fprime_test_api.await_event(
+            f"{producer}.DpProductionStopped", start=stop_start, timeout=CMD_TIMEOUT_S
         )
         assert stopped is not None, "STOP_SERIALIZING not confirmed (DpProductionStopped)"
 

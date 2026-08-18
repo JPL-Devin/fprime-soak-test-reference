@@ -33,19 +33,18 @@ no custom `conftest.py` — fixtures come from `fprime-gds`; helpers live in
 | `test_05_dataproducts.py` | Catalog build, serialize → `.fdp`, self-draining catalog xmit |
 | `test_06_soak_interval.py` | Alternates `START`/`STOP_SERIALIZING` each soak run |
 
-Half-duplex note: file-uplink helpers mute `Rfm69.rfm69Manager.TRANSMIT` for the
-transfer, then re-enable. DP downlink leaves TX enabled (it *is* the downlink).
+Half-duplex note: flight TX stays enabled during uplink — GDS FileUplink needs
+the downlink handshake and verification relies on the `FileReceived` EVR.
 
-## RF-loss discipline (EVR fallback)
+## RF-loss discipline (GDS-only verification)
 
-Over the lossy 19.2 kb/s half-duplex link, downlinked EVRs are frequently
-dropped, so **the Pi's `fsw.log` is the source of truth** for command effects.
-`await_event_or_fsw()` first checks the GDS event history, then falls back to
-growth in `fsw.log`. The FSW-log baseline **must be captured with `fsw_mark()`
-before the triggering command** — otherwise the command completes (and logs its
-event) inside `send_cmd` before the baseline is sampled, and growth detection
-waits forever for a second occurrence. `send_cmd()` similarly confirms via
-`OpCodeCompleted` in `fsw.log` when the GDS `OpCode` EVR is dropped.
+All verification is GDS-side (commands, events, telemetry): there is **no**
+SSH/log side-channel to the flight computer. Over the lossy 19.2 kb/s
+half-duplex link downlinked EVRs can be dropped, so `send_cmd()` retries a
+command once when its completion EVRs are missed (pass `resend=False` for
+commands that must not run twice, e.g. `CS_RUN`). File uplink is confirmed by
+`Svc.FileUplink` `FileReceived`, which FSW emits only when the end-of-file
+checksum matches — a single EVR proving both delivery and integrity.
 
 ## Flight runtime requirement: realtime scheduling
 
@@ -65,8 +64,8 @@ and `PrmIdNotFound` (WARNING_LO). Run the `seq/fix_prm_missing.bin` sequence onc
 ## Known limitations
 
 * **Multi-chunk file uplink has no ARQ.** A dropped DATA chunk stalls
-  `Svc.FileUplink`; the soak helper deletes the dest file and retries the whole
-  transfer (see `rf_uplink`). Expect longer runtime than single-chunk cases.
+  `Svc.FileUplink`; the soak helper retries the whole transfer (see
+  `rf_uplink`). Expect longer runtime than single-chunk cases.
 * **`UnexpectedSequenceCount` (WARNING_LO)** can still appear from genuine RF
   packet loss; it reflects link physics, not a flight defect.
 
@@ -103,7 +102,6 @@ Wait until `logs/fprime-gds-*/comm.py.log` shows `APID 4`.
 ```bash
 cd ~/InternshipWork/soak-testing/fprime-soak-test-reference
 source fprime-venv/bin/activate
-export SOAK_PI_HOST=pi@192.168.10.2
 pytest -o python_files='test_*.py' -v -rs \
   FprimeSoakTestReference/FprimeSoakTestReferenceDeployment/test/int \
   --dictionary ./build-artifacts/aarch64-linux/FprimeSoakTestReference_FprimeSoakTestReferenceDeployment/dict/FprimeSoakTestReferenceDeploymentTopologyDictionary.json \
@@ -125,6 +123,5 @@ pytest -o python_files='test_*.py' -v -rs \
 | `soak.dp_*_timeout_s` | DP produce / xmit waits |
 | `soak.dp_xmit_bytes_per_s` | Effective DP downlink rate used to scale the catalog drain timeout by pending bytes (default 300) |
 
-Env: `SOAK_PI_HOST` (default `pi@raspberrypi.local`), `SOAK_FSW_LOG` (default
-`/home/pi/fprime/fsw.log`). DP serialize duty state is stored at
+DP serialize duty state is stored at
 `~/.fprime-soak-${DEPLOYMENT_NAME}-dp-serialize` (`on`/`off`).

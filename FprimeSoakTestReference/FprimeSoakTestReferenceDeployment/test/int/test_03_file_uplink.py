@@ -1,8 +1,8 @@
-"""RF file uplink (muted TX window for half-duplex reliability).
+"""RF file uplink verified by the FileUplink FileReceived EVR.
 
 Covers single-chunk probes and a multi-chunk transfer that exceeds the RFM69
-255-byte Space Packet MTU. Uplink runs with flight TRANSMIT muted; success is
-verified by FSW file size (EVRs cannot downlink while muted).
+255-byte Space Packet MTU. FileReceived is only emitted when the end-of-file
+checksum matches, so it confirms both delivery and integrity.
 """
 
 from pathlib import Path
@@ -21,7 +21,7 @@ LARGE_UPLINK_BYTES = 10 * 1024
 
 
 def test_file_uplink_small_probe(fprime_test_api):
-    """Uplink a small text probe; verify by FSW file size while TX muted."""
+    """Uplink a small text probe; verify via FileReceived."""
     local = INT_DIR / "data" / "uplink_probe.txt"
     dest = f"{FSW_TMP}/soak_uplink_probe.txt"
     assert local.is_file(), f"missing uplink asset {local}"
@@ -40,23 +40,11 @@ def test_file_uplink_sequence_bin(fprime_test_api):
 
 
 def test_file_uplink_larger_than_mtu(fprime_test_api):
-    """Uplink a 10 KiB file (multi-chunk over the 255-byte RF MTU).
-
-    Flight TX stays enabled: GDS will not send DATA chunks until it sees the
-    FileUplink handshake on the downlink. Integrity is MD5, not size-only.
-    """
+    """Uplink a 10 KiB file (multi-chunk over the 255-byte RF MTU)."""
     local = INT_DIR / "data" / "uplink_large.bin"
     local.parent.mkdir(parents=True, exist_ok=True)
     local.write_bytes(bytes((i * 17 + 3) & 0xFF for i in range(LARGE_UPLINK_BYTES)))
     assert local.stat().st_size == LARGE_UPLINK_BYTES
     dest = f"{FSW_TMP}/soak_uplink_large.bin"
-    rf_uplink(
-        fprime_test_api,
-        local,
-        dest,
-        UPLINK_LARGE_TIMEOUT_S,
-        mute=False,
-        attempts=3,
-    )
-    # Size check already done inside rf_uplink; log expected size for GDS viewers.
+    rf_uplink(fprime_test_api, local, dest, UPLINK_LARGE_TIMEOUT_S, attempts=2)
     fprime_test_api.log(f"Large uplink OK: {LARGE_UPLINK_BYTES} bytes -> {dest}")
