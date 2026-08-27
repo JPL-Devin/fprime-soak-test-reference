@@ -10,7 +10,7 @@ module FprimeSoakTestReference {
     rateGroup1Hz
   }
 
-  topology FprimeSoakTestReferenceDeployment {
+  deployment topology FprimeSoakTestReferenceDeployment {
 
   # ----------------------------------------------------------------------
   # Subtopology imports
