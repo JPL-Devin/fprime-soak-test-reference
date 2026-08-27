@@ -76,14 +76,13 @@ Do **not** start GDS from `fprime-rfm69-feather-groundstation` (that yml sets
 `output-unframed-data: "-"` and empties UART).
 
 The `space-packet-fprime` framer is provided by the `fprime-gds-space-packet`
-plugin at the repo-root `gds-plugin/`. Install it **once** into the GDS venv
-(it auto-registers via a setuptools `fprime_gds` entry point — no `PYTHONPATH`
-or `FPRIME_GDS_EXTRA_PLUGINS`):
+plugin in `fprime-rfm69-feather-groundstation` (repo-root `gds-plugin/`).
+Install it **once** into the GDS venv (it auto-registers via a setuptools
+`fprime_gds` entry point — no `PYTHONPATH` or `FPRIME_GDS_EXTRA_PLUGINS`):
 
 ```bash
-cd ~/InternshipWork/soak-testing/fprime-soak-test-reference
 source fprime-venv/bin/activate
-pip install -e gds-plugin   # one-time
+pip install ../fprime-rfm69-feather-groundstation/gds-plugin   # one-time
 ```
 
 **Terminal 1 — GDS** (from the soak *deployment* directory), reads this
