@@ -123,7 +123,9 @@ pytest -o python_files='test_*.py' -v -rs \
 | `soak.uplink_timeout_s` | Single-chunk RF uplink wait |
 | `soak.uplink_large_timeout_s` | Multi-chunk uplink wait |
 | `soak.dp_*_timeout_s` | DP produce / xmit waits |
+| `soak.dp_catalog_dir` | FSW-side `DpCat` dir cleared before/after the DP tests (default `/home/pi/fprime/DpCat`) |
 
 Env: `SOAK_PI_HOST` (default `pi@raspberrypi.local`), `SOAK_FSW_LOG` (default
-`/home/pi/fprime/fsw.log`). DP serialize duty state is stored at
+`/home/pi/fprime/fsw.log`), `SOAK_DP_CATALOG_DIR` (overrides `soak.dp_catalog_dir`).
+DP serialize duty state is stored at
 `~/.fprime-soak-${DEPLOYMENT_NAME}-dp-serialize` (`on`/`off`).

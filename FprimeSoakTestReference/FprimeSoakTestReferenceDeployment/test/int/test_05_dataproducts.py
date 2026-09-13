@@ -28,8 +28,12 @@ from soak_helpers import (
 
 
 def test_dp_build_catalog(fprime_test_api):
-    """BUILD_CATALOG on a freshly cleared DpCat (no xmit command -> no warning)."""
-    clear_dp_catalog_dir()
+    """BUILD_CATALOG on a freshly cleared DpCat (no xmit command -> no warning).
+
+    test_06's serialize duty cycle accumulates products between intervals.
+    """
+    removed = clear_dp_catalog_dir(fprime_test_api)
+    assert removed >= 0, "DpCat cleanup failed (FSW host unreachable?)"
     wait_rf_quiet(2.0)
 
     cat = fprime_test_api.get_mnemonic("Svc.DpCatalog")
@@ -166,3 +170,5 @@ def test_dp_catalog_xmit_downlink(fprime_test_api):
     )
     assert done is not None, "CatalogXmitCompleted not observed (xmit did not drain)"
     wait_rf_quiet(2.0)
+    # Products are spent once drained; keep the next interval's catalog small.
+    clear_dp_catalog_dir(fprime_test_api)

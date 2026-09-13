@@ -32,6 +32,10 @@ DP_PRODUCE_TIMEOUT_S = int(CONFIG.get("soak.dp_produce_timeout_s", 45))
 DP_XMIT_TIMEOUT_S = int(CONFIG.get("soak.dp_xmit_timeout_s", 90))
 PI_HOST = os.environ.get("SOAK_PI_HOST", "pi@raspberrypi.local")
 FSW_LOG = os.environ.get("SOAK_FSW_LOG", "/home/pi/fprime/fsw.log")
+# DpCatalog directory on the FSW host (./DpCat relative to the FSW cwd).
+DP_CATALOG_DIR = os.environ.get(
+    "SOAK_DP_CATALOG_DIR", str(CONFIG.get("soak.dp_catalog_dir", "/home/pi/fprime/DpCat"))
+)
 
 
 def dp_serialize_state_path() -> Path:
@@ -353,13 +357,25 @@ def await_event_or_fsw(
         time.sleep(1.0)
 
 
-def clear_dp_catalog_dir() -> None:
-    """Remove accumulated .fdp files so BUILD_CATALOG / xmit stay small."""
+def clear_dp_catalog_dir(api=None) -> int:
+    """Remove accumulated .fdp files (filesystem-only, no flight command).
+
+    Returns the number removed, or -1 if the FSW host was unreachable.
+    """
+    d = DP_CATALOG_DIR
     try:
-        # FSW cwd is /home/pi/fprime; catalog is ./DpCat
-        pi_ssh("rm -f /home/pi/fprime/DpCat/*.fdp 2>/dev/null; mkdir -p /home/pi/fprime/DpCat")
-    except Exception:
-        pass
+        out = pi_ssh(
+            f"mkdir -p {d} && n=$(ls {d}/*.fdp 2>/dev/null | wc -l) && "
+            f"rm -f {d}/*.fdp && echo $n"
+        ).strip()
+        removed = int(out.splitlines()[-1] or "0")
+    except Exception as exc:
+        removed = -1
+        if api is not None:
+            api.log(f"DpCat cleanup failed for {PI_HOST}:{d}: {exc}")
+    if api is not None and removed >= 0:
+        api.log(f"DpCat cleanup removed {removed} .fdp file(s) from {d}")
+    return removed
 
 
 def wait_rf_quiet(seconds: float = 3.0) -> None:
