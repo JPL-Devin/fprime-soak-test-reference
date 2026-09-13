@@ -123,6 +123,7 @@ pytest -o python_files='test_*.py' -v -rs \
 | `soak.uplink_timeout_s` | Single-chunk RF uplink wait |
 | `soak.uplink_large_timeout_s` | Multi-chunk uplink wait |
 | `soak.dp_*_timeout_s` | DP produce / xmit waits |
+| `soak.dp_xmit_bytes_per_s` | Effective DP downlink rate used to scale the catalog drain timeout by pending bytes (default 300) |
 
 Env: `SOAK_PI_HOST` (default `pi@raspberrypi.local`), `SOAK_FSW_LOG` (default
 `/home/pi/fprime/fsw.log`). DP serialize duty state is stored at

@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -30,6 +31,8 @@ UPLINK_TIMEOUT_S = int(CONFIG.get("soak.uplink_timeout_s", 90))
 UPLINK_LARGE_TIMEOUT_S = int(CONFIG.get("soak.uplink_large_timeout_s", 120))
 DP_PRODUCE_TIMEOUT_S = int(CONFIG.get("soak.dp_produce_timeout_s", 45))
 DP_XMIT_TIMEOUT_S = int(CONFIG.get("soak.dp_xmit_timeout_s", 90))
+# Conservative effective DP downlink rate over RF (observed ~490 B/s on the 19.2 kb/s link).
+DP_XMIT_BYTES_PER_S = float(CONFIG.get("soak.dp_xmit_bytes_per_s", 300))
 PI_HOST = os.environ.get("SOAK_PI_HOST", "pi@raspberrypi.local")
 FSW_LOG = os.environ.get("SOAK_FSW_LOG", "/home/pi/fprime/fsw.log")
 
@@ -353,13 +356,26 @@ def await_event_or_fsw(
         time.sleep(1.0)
 
 
-def clear_dp_catalog_dir() -> None:
-    """Remove accumulated .fdp files so BUILD_CATALOG / xmit stay small."""
+_PENDING_RE = re.compile(r"Pending products: (\d+) Pending bytes: (\d+)")
+
+
+def dp_catalog_pending(api=None) -> tuple[int, int]:
+    """(pending products, pending bytes) from the latest ProcessingDirectoryComplete
+    in the FSW log; (-1, -1) if unavailable."""
     try:
-        # FSW cwd is /home/pi/fprime; catalog is ./DpCat
-        pi_ssh("rm -f /home/pi/fprime/DpCat/*.fdp 2>/dev/null; mkdir -p /home/pi/fprime/DpCat")
+        out = pi_ssh(f"grep -E 'ProcessingDirectoryComplete' {FSW_LOG} | tail -n 1 || true")
+        m = _PENDING_RE.search(out)
+        pending = (int(m.group(1)), int(m.group(2))) if m else (-1, -1)
     except Exception:
-        pass
+        pending = (-1, -1)
+    if api is not None:
+        api.log(f"DpCatalog pending: {pending[0]} product(s), {pending[1]} byte(s)")
+    return pending
+
+
+def dp_xmit_timeout_s(pending_bytes: int) -> int:
+    """Drain timeout for a catalog xmit: base timeout plus bytes at the RF rate."""
+    return DP_XMIT_TIMEOUT_S + int(max(pending_bytes, 0) / DP_XMIT_BYTES_PER_S)
 
 
 def wait_rf_quiet(seconds: float = 3.0) -> None:
