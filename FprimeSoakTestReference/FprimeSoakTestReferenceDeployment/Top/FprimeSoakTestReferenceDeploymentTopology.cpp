@@ -30,6 +30,10 @@ Svc::ActiveRateGroup::ContextArray rateGroup1KHzContext(0);
 Svc::ActiveRateGroup::ContextArray rateGroup10HzContext(0);
 Svc::ActiveRateGroup::ContextArray rateGroup1HzContext(0);
 
+// Rfm69Manager rejects a frame while in RX/TX holdoff or TX busy; each rejection is
+// followed by a resume, so a few retries suffice even under paced file uplink.
+static const U32 COM_RETRY_MAX_RETRIES = 10;
+
 /**
  * \brief configure/setup components in project-specific way
  *
@@ -48,6 +52,8 @@ void configureTopology() {
 
     // Command sequencer needs to allocate memory to hold contents of command sequences
     cmdSeq.allocateBuffer(0, mallocator, 5 * 1024);
+
+    comRetry.configure(COM_RETRY_MAX_RETRIES);
 
     // PrmDb file name must be supplied by the using topology (required for PRM_SAVE_FILE)
     FileHandling::prmDb.configure("/home/pi/fprime/PrmDb.dat");
