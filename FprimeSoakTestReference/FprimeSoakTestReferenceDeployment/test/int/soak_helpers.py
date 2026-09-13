@@ -26,6 +26,8 @@ UPLINK_TIMEOUT_S = int(CONFIG.get("soak.uplink_timeout_s", 30))
 UPLINK_LARGE_TIMEOUT_S = int(CONFIG.get("soak.uplink_large_timeout_s", 150))
 DP_PRODUCE_TIMEOUT_S = int(CONFIG.get("soak.dp_produce_timeout_s", 60))
 DP_XMIT_TIMEOUT_S = int(CONFIG.get("soak.dp_xmit_timeout_s", 90))
+# Conservative effective DP downlink rate over RF (observed ~490 B/s on the 19.2 kb/s link).
+DP_XMIT_BYTES_PER_S = float(CONFIG.get("soak.dp_xmit_bytes_per_s", 300))
 
 
 def dp_serialize_state_path() -> Path:
@@ -127,6 +129,55 @@ def rf_uplink(
 
 def wait_rf_quiet(seconds: float = 3.0) -> None:
     time.sleep(seconds)
+
+
+def _event_arg_vals(event) -> list:
+    return [getattr(arg, "val", arg) for arg in (event.get_args() or [])]
+
+
+def dp_catalog_pending(api, start) -> tuple[int, int]:
+    """(pending products, pending bytes) from ProcessingDirectoryComplete EVRs
+    received since `start`, summed over catalog directories; (-1, -1) if none arrived."""
+    cat = api.get_mnemonic("Svc.DpCatalog")
+    name = f"{cat}.ProcessingDirectoryComplete"
+    products, nbytes, seen = 0, 0, False
+    for ev in api.get_event_test_history().retrieve(start):
+        if ev.get_full_name() != name:
+            continue
+        vals = _event_arg_vals(ev)
+        if len(vals) >= 4:
+            products += int(vals[2])
+            nbytes += int(vals[3])
+            seen = True
+    pending = (products, nbytes) if seen else (-1, -1)
+    api.log(f"DpCatalog pending: {pending[0]} product(s), {pending[1]} byte(s)")
+    return pending
+
+
+def dp_xmit_timeout_s(pending_bytes: int) -> int:
+    """Drain timeout for a catalog xmit: base timeout plus pending bytes at the RF rate."""
+    return DP_XMIT_TIMEOUT_S + int(max(pending_bytes, 0) / DP_XMIT_BYTES_PER_S)
+
+
+def await_catalog_drain(api, start, timeout_s: int):
+    """Await CatalogXmitCompleted; the deadline extends while ProductComplete EVRs
+    keep arriving, so an unexpectedly large pending set is not a false failure."""
+    cat = api.get_mnemonic("Svc.DpCatalog")
+    done_name = f"{cat}.CatalogXmitCompleted"
+    progress_name = f"{cat}.ProductComplete"
+    deadline = time.time() + timeout_s
+    seen = start
+    while time.time() < deadline:
+        for ev in api.get_event_test_history().retrieve(seen):
+            seen += 1
+            if ev.get_full_name() == done_name:
+                return ev
+            if ev.get_full_name() == progress_name:
+                vals = _event_arg_vals(ev)
+                if len(vals) >= 3:
+                    deadline = time.time() + dp_xmit_timeout_s(int(vals[2]))
+        time.sleep(1.0)
+    return None
 
 
 def latest_channel_value(api, channel: str, timeout_s: int = CMD_TIMEOUT_S):

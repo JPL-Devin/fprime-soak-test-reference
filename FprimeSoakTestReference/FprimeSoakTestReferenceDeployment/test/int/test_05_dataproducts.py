@@ -7,14 +7,19 @@ there. So these tests must not provoke DpCatalog warnings:
   * DpXmitInProgress (WARNING_LO) - START_XMIT_CATALOG while already active.
 We therefore never STOP a catalog xmit defensively and start the xmit with
 remainActive=false so it drains and stops itself via CatalogXmitCompleted.
-DpCatalog's state file tracks transmitted products, so repeat xmits only send
-new products and no onboard cleanup is needed.
+Soak discipline: products are never deleted. Each interval downlinks whatever
+DpCatalog reports pending (including products accumulated by test_06's serialize
+duty cycle); the drain timeout is scaled from the pending byte count reported by
+ProcessingDirectoryComplete and extended as ProductComplete EVRs arrive.
 """
 
 from soak_helpers import (
     CMD_TIMEOUT_S,
     DP_PRODUCE_TIMEOUT_S,
     DP_XMIT_TIMEOUT_S,
+    await_catalog_drain,
+    dp_catalog_pending,
+    dp_xmit_timeout_s,
     send_cmd,
     wait_rf_quiet,
 )
@@ -29,6 +34,7 @@ def test_dp_build_catalog(fprime_test_api):
         f"{cat}.CatalogBuildComplete", start=start, timeout=DP_PRODUCE_TIMEOUT_S
     )
     assert done is not None, "CatalogBuildComplete not observed"
+    dp_catalog_pending(fprime_test_api, start)
 
 
 def test_dp_serialize_produce_file(fprime_test_api):
@@ -72,12 +78,12 @@ def test_dp_serialize_produce_file(fprime_test_api):
 
 
 def test_dp_catalog_xmit_downlink(fprime_test_api):
-    """BUILD + START_XMIT (remainActive=false) on the product from the prior test.
+    """BUILD + START_XMIT (remainActive=false): downlink everything pending.
 
-    The catalog holds the .fdp produced by test_dp_serialize_produce_file, so
-    START_XMIT emits SendingProduct and then, because remainActive=false,
-    drains and self-stops with CatalogXmitCompleted -- no STOP_XMIT_CATALOG
-    command, hence no XmitNotActive warning.
+    The catalog holds at least the .fdp from test_dp_serialize_produce_file plus
+    any not-yet-downlinked products from earlier intervals. START_XMIT emits
+    SendingProduct and then, because remainActive=false, drains and self-stops
+    with CatalogXmitCompleted -- no STOP_XMIT_CATALOG, hence no XmitNotActive.
     """
     cat = fprime_test_api.get_mnemonic("Svc.DpCatalog")
 
@@ -87,6 +93,10 @@ def test_dp_catalog_xmit_downlink(fprime_test_api):
         f"{cat}.CatalogBuildComplete", start=build_start, timeout=DP_PRODUCE_TIMEOUT_S
     )
     assert built is not None, "CatalogBuildComplete not observed before xmit"
+    pending_products, pending_bytes = dp_catalog_pending(fprime_test_api, build_start)
+    assert pending_products != 0, "No pending products to downlink"
+    drain_timeout_s = dp_xmit_timeout_s(pending_bytes)
+    fprime_test_api.log(f"Catalog drain timeout: {drain_timeout_s} s")
     wait_rf_quiet(1.0)
 
     start = fprime_test_api.get_event_test_history().size()
@@ -104,8 +114,6 @@ def test_dp_catalog_xmit_downlink(fprime_test_api):
 
     # remainActive=false => catalog drains and self-stops. Confirm the clean stop
     # rather than forcing STOP_XMIT_CATALOG (which would warn if already done).
-    done = fprime_test_api.await_event(
-        f"{cat}.CatalogXmitCompleted", start=start, timeout=DP_XMIT_TIMEOUT_S
-    )
+    done = await_catalog_drain(fprime_test_api, start, drain_timeout_s)
     assert done is not None, "CatalogXmitCompleted not observed (xmit did not drain)"
     wait_rf_quiet(2.0)
