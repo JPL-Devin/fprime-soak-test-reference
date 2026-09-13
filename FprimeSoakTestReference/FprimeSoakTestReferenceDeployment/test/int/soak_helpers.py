@@ -14,6 +14,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import subprocess
 import time
 from pathlib import Path
@@ -30,12 +31,10 @@ UPLINK_TIMEOUT_S = int(CONFIG.get("soak.uplink_timeout_s", 90))
 UPLINK_LARGE_TIMEOUT_S = int(CONFIG.get("soak.uplink_large_timeout_s", 120))
 DP_PRODUCE_TIMEOUT_S = int(CONFIG.get("soak.dp_produce_timeout_s", 45))
 DP_XMIT_TIMEOUT_S = int(CONFIG.get("soak.dp_xmit_timeout_s", 90))
+# Conservative effective DP downlink rate over RF (observed ~490 B/s on the 19.2 kb/s link).
+DP_XMIT_BYTES_PER_S = float(CONFIG.get("soak.dp_xmit_bytes_per_s", 300))
 PI_HOST = os.environ.get("SOAK_PI_HOST", "pi@raspberrypi.local")
 FSW_LOG = os.environ.get("SOAK_FSW_LOG", "/home/pi/fprime/fsw.log")
-# DpCatalog directory on the FSW host (./DpCat relative to the FSW cwd).
-DP_CATALOG_DIR = os.environ.get(
-    "SOAK_DP_CATALOG_DIR", str(CONFIG.get("soak.dp_catalog_dir", "/home/pi/fprime/DpCat"))
-)
 
 
 def dp_serialize_state_path() -> Path:
@@ -357,25 +356,26 @@ def await_event_or_fsw(
         time.sleep(1.0)
 
 
-def clear_dp_catalog_dir(api=None) -> int:
-    """Remove accumulated .fdp files (filesystem-only, no flight command).
+_PENDING_RE = re.compile(r"Pending products: (\d+) Pending bytes: (\d+)")
 
-    Returns the number removed, or -1 if the FSW host was unreachable.
-    """
-    d = DP_CATALOG_DIR
+
+def dp_catalog_pending(api=None) -> tuple[int, int]:
+    """(pending products, pending bytes) from the latest ProcessingDirectoryComplete
+    in the FSW log; (-1, -1) if unavailable."""
     try:
-        out = pi_ssh(
-            f"mkdir -p {d} && n=$(ls {d}/*.fdp 2>/dev/null | wc -l) && "
-            f"rm -f {d}/*.fdp && echo $n"
-        ).strip()
-        removed = int(out.splitlines()[-1] or "0")
-    except Exception as exc:
-        removed = -1
-        if api is not None:
-            api.log(f"DpCat cleanup failed for {PI_HOST}:{d}: {exc}")
-    if api is not None and removed >= 0:
-        api.log(f"DpCat cleanup removed {removed} .fdp file(s) from {d}")
-    return removed
+        out = pi_ssh(f"grep -E 'ProcessingDirectoryComplete' {FSW_LOG} | tail -n 1 || true")
+        m = _PENDING_RE.search(out)
+        pending = (int(m.group(1)), int(m.group(2))) if m else (-1, -1)
+    except Exception:
+        pending = (-1, -1)
+    if api is not None:
+        api.log(f"DpCatalog pending: {pending[0]} product(s), {pending[1]} byte(s)")
+    return pending
+
+
+def dp_xmit_timeout_s(pending_bytes: int) -> int:
+    """Drain timeout for a catalog xmit: base timeout plus bytes at the RF rate."""
+    return DP_XMIT_TIMEOUT_S + int(max(pending_bytes, 0) / DP_XMIT_BYTES_PER_S)
 
 
 def wait_rf_quiet(seconds: float = 3.0) -> None:
