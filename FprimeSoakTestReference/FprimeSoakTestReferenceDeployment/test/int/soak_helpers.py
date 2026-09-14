@@ -131,8 +131,12 @@ def wait_rf_quiet(seconds: float = 3.0) -> None:
     time.sleep(seconds)
 
 
+def _full_name(item) -> str:
+    return item.get_template().get_full_name()
+
+
 def _event_arg_vals(event) -> list:
-    return [getattr(arg, "val", arg) for arg in (event.get_args() or [])]
+    return [arg.val for arg in event.get_args()]
 
 
 def dp_catalog_pending(api, start) -> tuple[int, int]:
@@ -142,7 +146,7 @@ def dp_catalog_pending(api, start) -> tuple[int, int]:
     name = f"{cat}.ProcessingDirectoryComplete"
     products, nbytes, seen = 0, 0, False
     for ev in api.get_event_test_history().retrieve(start):
-        if ev.get_full_name() != name:
+        if _full_name(ev) != name:
             continue
         vals = _event_arg_vals(ev)
         if len(vals) >= 4:
@@ -170,9 +174,9 @@ def await_catalog_drain(api, start, timeout_s: int):
     while time.time() < deadline:
         for ev in api.get_event_test_history().retrieve(seen):
             seen += 1
-            if ev.get_full_name() == done_name:
+            if _full_name(ev) == done_name:
                 return ev
-            if ev.get_full_name() == progress_name:
+            if _full_name(ev) == progress_name:
                 vals = _event_arg_vals(ev)
                 if len(vals) >= 3:
                     deadline = time.time() + dp_xmit_timeout_s(int(vals[2]))
@@ -192,9 +196,6 @@ def latest_channel_value(api, channel: str, timeout_s: int = CMD_TIMEOUT_S):
     history = api.get_telemetry_test_history()
     latest = None
     for item in history.retrieve():
-        try:
-            if item.get_full_name() == channel:
-                latest = item
-        except Exception:
-            continue
+        if _full_name(item) == channel:
+            latest = item
     return latest.get_val() if latest is not None else None
