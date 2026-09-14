@@ -99,9 +99,8 @@ def test_dp_catalog_xmit_downlink(fprime_test_api):
     fprime_test_api.log(f"Catalog drain timeout: {drain_timeout_s} s")
     wait_rf_quiet(1.0)
 
-    # SendingProduct, not the OpCode EVRs, proves START_XMIT ran: a duplicate
-    # while xmit is active is rejected with DpXmitInProgress and leaves the
-    # running xmit untouched, so resending after a lost uplink is safe.
+    # SendingProduct proves START_XMIT ran; a duplicate while xmit is active is
+    # rejected (DpXmitInProgress) without disturbing it, so a resend is safe.
     start = fprime_test_api.get_event_test_history().size()
     sending = None
     for _ in range(2):
