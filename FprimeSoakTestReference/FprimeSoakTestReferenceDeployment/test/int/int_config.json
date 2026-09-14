@@ -15,9 +15,9 @@
   "Rfm69.Rfm69Manager": "Rfm69.rfm69Manager",
   "Components.SensorDataProducer": "FprimeSoakTestReference.sensorDataProducer",
   "soak.fsw_tmp": "/tmp",
-  "soak.cmd_timeout_s": 30,
+  "soak.cmd_timeout_s": 15,
   "soak.uplink_timeout_s": 30,
   "soak.uplink_large_timeout_s": 150,
-  "soak.dp_produce_timeout_s": 90,
-  "soak.dp_xmit_timeout_s": 120
+  "soak.dp_produce_timeout_s": 60,
+  "soak.dp_xmit_timeout_s": 90
 }

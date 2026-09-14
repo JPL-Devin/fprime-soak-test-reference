@@ -63,6 +63,9 @@ module FprimeSoakTestReference {
 
   instance timer: Svc.LinuxTimer base id 0x10013000
 
+  # Resends downlink frames Rfm69Manager rejects (RX/TX holdoff, TX busy, mute).
+  instance comRetry: Svc.ComRetry base id 0x10014000
+
   instance sensorDataProducer: Components.SensorDataProducer base id 0x10015000
 
 }

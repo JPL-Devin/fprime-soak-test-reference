@@ -36,6 +36,7 @@ module FprimeSoakTestReference {
     instance systemResources
     instance timer
     instance cmdSeq
+    instance comRetry
     instance sensorDataProducer
 
   # ----------------------------------------------------------------------
@@ -85,12 +86,14 @@ module FprimeSoakTestReference {
       Rfm69.rfm69Manager.allocate   -> ComCcsds.commsBufferManager.bufferGetCallee
       Rfm69.rfm69Manager.deallocate -> ComCcsds.commsBufferManager.bufferSendIn
 
-      # Aggregated space packets <-> RFM69 (Downlink).
-      # ComRetry temporarily removed for A/B — re-add if holdoff/mute deferrals
-      # need same-frame retry before pausing ComQueue.
-      ComCcsds.SpacePacketFraming.dataOut       -> Rfm69.rfm69Manager.dataIn
-      Rfm69.rfm69Manager.dataReturnOut          -> ComCcsds.SpacePacketFraming.dataReturnIn
-      Rfm69.rfm69Manager.comStatusOut           -> ComCcsds.SpacePacketFraming.comStatusIn
+      # Aggregated space packets -> ComRetry -> RFM69 (Downlink). Rfm69Manager
+      # rejects frames during RX/TX holdoff or TX busy; ComRetry resends them.
+      ComCcsds.SpacePacketFraming.dataOut       -> comRetry.dataIn
+      comRetry.dataReturnOut                    -> ComCcsds.SpacePacketFraming.dataReturnIn
+      comRetry.comStatusOut                     -> ComCcsds.SpacePacketFraming.comStatusIn
+      comRetry.dataOut                          -> Rfm69.rfm69Manager.dataIn
+      Rfm69.rfm69Manager.dataReturnOut          -> comRetry.dataReturnIn
+      Rfm69.rfm69Manager.comStatusOut           -> comRetry.comStatusIn
 
       # RFM69 <-> SpacePacketDeframer (Uplink; one complete SP per RF packet)
       Rfm69.rfm69Manager.dataOut                -> ComCcsds.SpacePacketFraming.dataIn
