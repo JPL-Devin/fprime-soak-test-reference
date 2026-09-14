@@ -39,8 +39,10 @@ the downlink handshake and verification relies on the `FileReceived` EVR.
 ## RF-loss discipline (GDS-only verification)
 
 All verification is GDS-side (commands, events, telemetry): there is **no**
-SSH/log side-channel to the flight computer. Over the lossy 19.2 kb/s
-half-duplex link downlinked EVRs can be dropped, so `send_cmd()` retries a
+SSH/log side-channel to the flight computer. The flight topology places
+`Svc.ComRetry` ahead of `Rfm69Manager` so frames refused during RX/TX holdoff
+are resent rather than dropped; residual RF loss over the 19.2 kb/s half-duplex
+link can still drop a downlinked EVR, so `send_cmd()` retries a
 command once when its completion EVRs are missed (pass `resend=False` for
 commands that must not run twice, e.g. `CS_RUN`). File uplink is confirmed by
 `Svc.FileUplink` `FileReceived`, which FSW emits only when the end-of-file
