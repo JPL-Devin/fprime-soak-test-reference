@@ -10,15 +10,16 @@ module ComCfg {
     @ Spacecraft ID (10 bits) for CCSDS Data Link layer
     dictionary constant SpacecraftId = 0x0044
 
-    @ Fixed size of CCSDS TM frames (unused by SpacePacketFraming radio path;
-    @ retained for dictionary / unused TmFramer compile compatibility).
-    dictionary constant TmFrameFixedSize = 255  # Needs to be at least COM_BUFFER_MAX_SIZE + (2 * SpacePacketHeaderSize) + 1
+    @ Fixed size of CCSDS TM frames. No TmFramer is used on the SpacePacketFraming
+    @ radio path, but the data field (Svc.Ccsds.TmDataFieldSize: this minus the
+    @ 6-byte TM header and 2-byte trailer, i.e. 247) sets the ComAggregator
+    @ aggregate size (ComCcsdsConfig.Aggregator.aggregationSize), and so the size
+    @ of every RFM69 packet.
+    dictionary constant TmFrameFixedSize = 255
 
     @ Upper Bound on Fixed size of CCSDS AOS frames
     constant AosMaxFrameFixedSize = 1536
 
-    @ Aggregation buffer for ComAggregator: full RFM69 payload (one RF packet)
-    constant AggregationSize = 255
 
     @ Packet Version Numbers are 3 bits with only 2 currently valid values
     dictionary enum Pvn : U8 {
@@ -47,10 +48,17 @@ module ComCfg {
     @ Reserved SA index sentinel meaning "unset"; SA index 0xFFFF cannot be selected via context
     constant SaIndexUnset = 0xFFFF
 
+    @ Packet type in the Space Packet Primary Header
+    enum SppPacketType : U8 {
+        SPP_TELEMETRY = 0  @< Telemetry / data packet (downlink)
+        SPP_COMMAND   = 1  @< Telecommand packet (uplink)
+    } default SPP_TELEMETRY
+
     @ Type used to pass context info between components during framing/deframing
     struct FrameContext {
         comQueueIndex: FwIndexType  @< Queue Index used by the ComQueue, other components shall not modify
         apid: Apid                  @< 11 bits APID in CCSDS
+        pktType: SppPacketType      @< 1 bit packet type in space packet primary header
         hasSecHdr: bool             @< Secondary header flag for SpacePacketFramer
         sequenceFlags: U8           @< 2 bit Sequence flags (0b00=continuation, 0b01=first, 0b10=last, 0b11=unsegmented)
         sequenceCount: U16          @< 14 bit Sequence count - sequence count is incremented per APID
@@ -58,9 +66,11 @@ module ComCfg {
         pvn: Pvn                    @< Packet Version Number - used for AOS deframing to identify packet type
         sendNow: bool               @< Flag to AOS Framer that the Frame this packet goes into should be sent ASAP
         saIndex: U16                @< Security Association Index - set by SDLS deframers, read by SDLS framers
+        firstHeaderPointer: U16     @< 11 bit TM First Header Pointer - set by ComAggregator, read by TmFramer
     } default {
         comQueueIndex = 0
         apid = Apid.FW_PACKET_UNKNOWN
+        pktType = SppPacketType.SPP_TELEMETRY
         hasSecHdr = false
         sequenceFlags = 0x3
         sequenceCount = 0
@@ -68,6 +78,7 @@ module ComCfg {
         pvn = Pvn.INVALID_UNINITIALIZED
         sendNow = false
         saIndex = SaIndexUnset
+        firstHeaderPointer = 0
     }
 
 }

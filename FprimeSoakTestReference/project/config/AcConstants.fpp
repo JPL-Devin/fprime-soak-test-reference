@@ -48,6 +48,9 @@ constant DpManagerNumPorts = 5
 @ Size of processing port array for DpWriter
 constant DpWriterNumProcPorts = 5
 
+@ Size of data product routing port arrays for DpWriter
+constant DpWriterNumPorts = 5
+
 @ The size of a file name string
 @ Reduced so SequenceArgumentsMaxSize remains positive with RFM69-sized
 @ FW_COM_BUFFER_MAX_SIZE (220) on 64-bit platforms.
