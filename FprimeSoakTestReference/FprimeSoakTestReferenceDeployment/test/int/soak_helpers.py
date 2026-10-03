@@ -103,7 +103,7 @@ def rf_uplink(
     local_path: Path,
     dest: str,
     uplink_timeout_s: int = UPLINK_TIMEOUT_S,
-    attempts: int = 2,
+    attempts: int = 3,
 ) -> None:
     """Uplink over RF; verify via the FileUplink FileReceived EVR.
 
@@ -114,6 +114,9 @@ def rf_uplink(
     uplink = api.get_mnemonic("Svc.FileUplink")
     received_pred = api.get_event_pred(f"{uplink}.FileReceived", [dest])
     for attempt in range(attempts):
+        # Let the downlink burst queued during the previous uplink drain; the
+        # half-duplex radio cannot receive the START packet while transmitting.
+        wait_rf_quiet(2.0)
         start = api.get_event_test_history().size()
         api.uplink_file(str(local_path), dest)
         ev = api.await_event(received_pred, start=start, timeout=int(uplink_timeout_s))
@@ -122,8 +125,6 @@ def rf_uplink(
             wait_rf_quiet(1.0)
             return
         api.log(f"uplink attempt {attempt + 1}/{attempts} unconfirmed for {dest}")
-        # Brief quiet so FileUplink can finish tearing down before retry.
-        time.sleep(1.0)
     raise AssertionError(f"Uplink failed for {local_path} -> {dest} (no FileReceived)")
 
 

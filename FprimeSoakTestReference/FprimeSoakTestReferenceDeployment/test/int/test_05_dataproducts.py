@@ -99,17 +99,18 @@ def test_dp_catalog_xmit_downlink(fprime_test_api):
     fprime_test_api.log(f"Catalog drain timeout: {drain_timeout_s} s")
     wait_rf_quiet(1.0)
 
+    # SendingProduct proves START_XMIT ran; a duplicate while xmit is active is
+    # rejected (DpXmitInProgress) without disturbing it, so a resend is safe.
     start = fprime_test_api.get_event_test_history().size()
-    send_cmd(
-        fprime_test_api,
-        f"{cat}.START_XMIT_CATALOG",
-        ["NO_WAIT", "false"],
-        resend=False,
-    )
-
-    sending = fprime_test_api.await_event(
-        f"{cat}.SendingProduct", start=start, timeout=DP_XMIT_TIMEOUT_S
-    )
+    sending = None
+    for _ in range(2):
+        fprime_test_api.send_command(f"{cat}.START_XMIT_CATALOG", ["NO_WAIT", "false"])
+        sending = fprime_test_api.await_event(
+            f"{cat}.SendingProduct", start=start, timeout=CMD_TIMEOUT_S
+        )
+        if sending is not None:
+            break
+        fprime_test_api.log("SendingProduct not observed; resending START_XMIT_CATALOG")
     assert sending is not None, "SendingProduct not observed"
 
     # remainActive=false => catalog drains and self-stops. Confirm the clean stop
